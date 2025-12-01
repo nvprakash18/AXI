@@ -1,0 +1,120 @@
+class axi_mon extends uvm_monitor;
+    `uvm_component_utils(axi_mon)
+    function new(string name = "axi_mon", uvm_component parent);
+        super.new(name, parent);
+    endfunction
+    
+    // Separate analysis ports for each AXI channel - better modularity
+    uvm_analysis_port#(axi_seq_item) aw_ap_port;  // Write Address Channel
+    uvm_analysis_port#(axi_seq_item) w_ap_port;   // Write Data Channel
+    uvm_analysis_port#(axi_seq_item) b_ap_port;   // Write Response Channel
+    uvm_analysis_port#(axi_seq_item) ar_ap_port;  // Read Address Channel
+    uvm_analysis_port#(axi_seq_item) r_ap_port;   // Read Data Channel
+    
+    virtual axi_intf vif(clk,rst);
+
+    function void build_phase(uvm_phase phase);
+        super.build_phase(phase);
+        uvm_config_db#(virtual axi_intf)::get(this,"","vif",vif);
+        
+        // Create all 5 analysis ports
+        aw_ap_port = new("aw_ap_port", this);
+        w_ap_port  = new("w_ap_port", this);
+        b_ap_port  = new("b_ap_port", this);
+        ar_ap_port = new("ar_ap_port", this);
+        r_ap_port  = new("r_ap_port", this);
+    endfunction
+
+    task run_phase(uvm_phase phase);
+        // Monitor all 5 AXI channels independently in parallel
+        // This allows capturing overlapping transactions with different IDs
+        fork
+            forever monitor_write_address_channel();
+            forever monitor_write_data_channel();
+            forever monitor_write_response_channel();
+            forever monitor_read_address_channel();
+            forever monitor_read_data_channel();
+        join
+    endtask
+
+    // Monitor Write Address Channel independently
+    task monitor_write_address_channel();
+        axi_seq_item tx;
+        @(posedge vif.clk);
+        if(vif.awvalid && vif.awready) begin
+            tx = axi_seq_item::type_id::create("tx");
+            tx.status = WR;
+            tx.awid = vif.awid;
+            tx.awaddr = vif.awaddr;
+            tx.awlen = vif.awlen;
+            tx.awsize = vif.awsize;
+            tx.awburst = vif.awburst;
+            tx.awlock = vif.awlock;
+            tx.awcache = vif.awcache;
+            tx.awprot = vif.awprot;
+            aw_ap_port.write(tx); // Send to write address port
+        end
+    endtask
+
+    // Monitor Write Data Channel independently
+    task monitor_write_data_channel();
+        axi_seq_item tx;
+        @(posedge vif.clk);
+        if(vif.wvalid && vif.wready) begin
+            tx = axi_seq_item::type_id::create("tx");
+            tx.status = WR;
+            tx.wid = vif.wid;
+            tx.wdata.push_back(vif.wdata);
+            tx.wstrb = vif.wstrb;
+            tx.wlast = vif.wlast;
+            w_ap_port.write(tx); // Send to write data port
+        end
+    endtask
+
+    // Monitor Write Response Channel independently
+    task monitor_write_response_channel();
+        axi_seq_item tx;
+        @(posedge vif.clk);
+        if(vif.bvalid && vif.bready) begin
+            tx = axi_seq_item::type_id::create("tx");
+            tx.status = WR;
+            tx.bid = vif.bid;
+            tx.bresp = vif.bresp;
+            b_ap_port.write(tx); // Send to write response port
+        end
+    endtask
+
+    // Monitor Read Address Channel independently
+    task monitor_read_address_channel();
+        axi_seq_item tx;
+        @(posedge vif.clk);
+        if(vif.arvalid && vif.arready) begin
+            tx = axi_seq_item::type_id::create("tx");
+            tx.status = RD;
+            tx.arid = vif.arid;
+            tx.araddr = vif.araddr;
+            tx.arlen = vif.arlen;
+            tx.arsize = vif.arsize;
+            tx.arburst = vif.arburst;
+            tx.arlock = vif.arlock;
+            tx.arcache = vif.arcache;
+            tx.arprot = vif.arprot;
+            ar_ap_port.write(tx); // Send to read address port
+        end
+    endtask
+
+    // Monitor Read Data Channel independently
+    task monitor_read_data_channel();
+        axi_seq_item tx;
+        @(posedge vif.clk);
+        if(vif.rvalid && vif.rready) begin
+            tx = axi_seq_item::type_id::create("tx");
+            tx.status = RD;
+            tx.rid = vif.rid;
+            tx.rdata.push_back(vif.rdata);
+            tx.rresp = vif.rresp;
+            tx.rlast = vif.rlast;
+            r_ap_port.write(tx); // Send to read data port
+        end
+    endtask
+endclass

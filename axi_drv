@@ -1,0 +1,100 @@
+class axi_drv extends uvm_driver#(axi_seq_item);
+    `uvm_component_utils(axi_drv);
+    function new(string name ="axi_drv", uvm_component parent);
+        super.new(name,parent);
+    endfunction
+    virtual axi_intf vif(clk,rst);
+
+    function void build_phase(uvm_phase phase);
+        super.build_phase(phase);
+        uvm_config_db#(virtual axi_intf)::get(this,"","vif",vif);
+    endfunction
+    task run_phase(uvm_phase phase);
+        axi_seq_item axi_tx;
+        forever begin
+            seq_item_port.get_next_item(axi_tx);
+                fork
+                    begin
+                    if(axi_tx.status == WR || axi_tx.status == WR_RD) begin
+                            write_control_channel(axi_tx);
+                            write_data_channel(axi_tx);
+                            write_responce_channel(axi_tx);
+                        end
+                    end
+                    begin
+                    if(axi_tx.status == RD || axi_tx.status == WR_RD) begin
+                            read_control_channel(axi_tx);
+                            read_data_channel(axi_tx);
+                        end
+                    end
+                join
+            seq_item_port.item_done();
+        end
+    endtask
+    
+    task write_control_channel(ref axi_seq_item axi_tx);
+            (@posedge vif.clk);//or a clking block if used
+            vif.awvalid = 1;
+            vif.awid = axi_tx.awid;
+            vif.awsize = axi_tx.awsize;
+            vif.awlen = axi_tx.awlen;
+            vif.awburst = axi_tx.awburst;
+            vif.awaddr = axi_tx.awaddr;
+            vif.awlock = axi_tx.awlock;
+            vif.awprot = axi_tx.awprot;
+            vif.awcache = axi_tx.awcache;
+            wait(vif.awready == 1);
+            (@posedge vif.clk);
+            vif.awvalid = 0;
+    endtask
+
+    task write_data_channel(ref axi_seq_item axi_tx);
+        int i;
+        for(i=0;i<=axi_tx.awlen; i++)
+        begin    
+            (@posedge vif.clk);//or a clking block if used
+            vif.wvalid = 1;
+            vif.wid = axi_tx.wid;
+            vif.wdata = axi_tx.wdata[i];
+            vif.wstrb = axi_tx.wstrb;
+            if(i == axi_tx.awlen) vif.wlast = 1;
+            else vif.wlast = 0;
+            wait(vif.wready == 1);
+        end
+        (@posedge vif.clk);
+        vif.wvalid = 0;
+        vif.wlast = 0;
+    endtask
+
+    task write_responce_channel(ref axi_seq_item axi_tx);
+            (@posedge vif.clk);//or a clking block if used
+            vif.bready = 1;
+            wait(vif.bvalid == 1);
+            (@posedge vif.clk);
+            vif.bready = 0;
+    endtask
+    task read_control_channel(ref axi_seq_item axi_tx);
+            (@posedge vif.clk);//or a clking block if used
+            vif.arvalid = 1;
+            vif.arid = axi_tx.arid;
+            vif.arsize = axi_tx.arsize;
+            vif.arlen = axi_tx.arlen;
+            vif.arburst = axi_tx.arburst;
+            vif.araddr = axi_tx.araddr;
+            vif.arlock = axi_tx.arlock;
+            vif.arprot = axi_tx.arprot;
+            vif.arcache = axi_tx.arcache;
+            wait(vif.arready == 1);
+            (@posedge vif.clk);
+            vif.arvalid = 0;
+    endtask
+    task read_data_channel(ref axi_seq_item axi_tx);
+            int count;
+            while(count < axi_tx.arlen) begin
+            (@posedge vif.clk);
+            vif.rready = 1;
+            if(vif.rvalid == 1) count++;
+            end
+            vif.rready = 0;
+    endtask
+endclass
